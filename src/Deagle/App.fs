@@ -44,9 +44,9 @@ module BulletStuff =
         let box = 
             let shape = new BoxShape(Vector3(1.0f,1.0f,1.0f))
             let mutable inertia = Vector3()
-            shape.CalculateLocalInertia(5.0f, &inertia)
-            let state = new DefaultMotionState(Matrix.RotationY(45.0f) * Matrix.Translation(0.0f,0.0f,20.0f))
-            let info = new RigidBodyConstructionInfo(5.0f, state, shape,inertia)
+            shape.CalculateLocalInertia(50.0f, &inertia)
+            let state = new DefaultMotionState(Matrix.Translation(0.0f,0.0f,1.0f))
+            let info = new RigidBodyConstructionInfo(50.0f, state, shape,inertia)
             let res = new RigidBody(info)
             res.ActivationState <- ActivationState.DisableDeactivation
             res.SetDamping(0.01f,0.01f)
@@ -56,12 +56,32 @@ module BulletStuff =
             let shape = new SphereShape(1.0f)
             let mutable inertia = Vector3()
             shape.CalculateLocalInertia(5.0f, &inertia)
-            let state = new DefaultMotionState(Matrix.Translation(0.25f,0.0f,10.0f))
+            let state = new DefaultMotionState(Matrix.Translation(2.0f,0.0f,1.0f))
             let info = new RigidBodyConstructionInfo(5.0f, state, shape, inertia)
             let res = new RigidBody(info)
             res.ActivationState <- ActivationState.DisableDeactivation
             res.SetDamping(0.01f,0.01f)
             res
+
+        let spring = new Generic6DofSpring2Constraint(box, ball, Matrix.Identity, Matrix.Identity)
+
+        spring.LinearLowerLimit <- Vector3(5.0f,5.0f,5.0f)
+        spring.LinearUpperLimit <- Vector3(10.0f,10.0f,10.0f)
+        spring.AngularLowerLimit <- Vector3(0.0f,0.0f,0.0f)
+        spring.AngularUpperLimit <- Vector3(1.0f,1.0f,1.0f)
+
+        spring.EnableSpring(1, true)
+        spring.SetStiffness(1, 35.0f)
+        spring.SetDamping(1, 0.5f)
+        spring.EnableSpring(0, true)
+        spring.SetStiffness(0, 35.0f)
+        spring.SetDamping(0, 0.5f)
+        spring.EnableSpring(2, true)
+        spring.SetStiffness(2, 35.0f)
+        spring.SetDamping(2, 0.5f)
+        spring.SetEquilibriumPoint()
+
+        world.AddConstraint(spring)
 
         world.AddCollisionObject floor
         world.AddRigidBody box
@@ -91,10 +111,10 @@ module App =
     let applyImpulse() =
         let pos = bball.MotionState.WorldTransform.Origin
         let dir = -pos / pos.Length + Vector3(0.0f,0.0f,0.0f)
-        bball.ApplyCentralImpulse(dir * 100.0f)
-        let pos = bbox.MotionState.WorldTransform.Origin
-        let dir = -pos / pos.Length + Vector3(0.0f,0.0f,0.0f)
-        bbox.ApplyCentralImpulse(dir * 100.0f)
+        bball.ApplyCentralImpulse(Vector3(0.0f,100.0f,0.0f))
+        // let pos = bbox.MotionState.WorldTransform.Origin
+        // let dir = -pos / pos.Length + Vector3(0.0f,0.0f,0.0f)
+        // bbox.ApplyCentralImpulse(dir * 100.0f + Vector3(0.0f,0.0f,10.0f))
         printfn "impulse! %A" dir
 
 
@@ -154,8 +174,8 @@ module App =
 
     let app =
         let world,ball,box = BulletStuff.initBullet()
-        bball <- box
-        bbox <- ball
+        bball <- ball
+        bbox <- box
         let sw = System.Diagnostics.Stopwatch()
         let simulant = BulletStuff.simulant sw world ball box
         let tp = ThreadPool.add "simulant" simulant ThreadPool.empty

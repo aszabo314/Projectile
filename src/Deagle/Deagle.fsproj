@@ -15,7 +15,7 @@
   </PropertyGroup>
   <ItemGroup>
     <Reference Include="BulletSharp">
-      <HintPath>/Users/atti/proj/BulletSharpPInvoke/BulletSharp/bin/Release/netcoreapp2.0/BulletSharp.dll</HintPath>
+      <HintPath>../../dlls_copy_to_output_and_fix_project_file/Release/netcoreapp2.0/BulletSharp.dll</HintPath>
     </Reference>
   </ItemGroup>
   <ItemGroup>
