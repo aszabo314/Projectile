@@ -1,20 +1,22 @@
 FSharp.Core
+Microsoft.NETFramework.ReferenceAssemblies
+
+FSharp.Data.Adaptive
 
 Aardvark.Base
-Aardvark.Base.Incremental
 Aardvark.Base.FSharp
 
 Aardvark.Base.Rendering
 Aardvark.Application.Slim
 Aardvark.Application.Slim.GL
-Aardvark.Application.Slim.Vulkan
 Aardvark.SceneGraph
 Aardvark.SceneGraph.IO
 
-#if __Media__
+Adaptify.Core
+Adaptify.MSBuild
+
 Aardvark.Service
 Aardvark.UI
 Aardvark.UI.Primitives
-Aardvark.Compiler.DomainTypes.MSBuild
+
 Aardium
-#endif

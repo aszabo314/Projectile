@@ -1,8 +1,8 @@
-﻿<?xml version="1.0" encoding="utf-8"?>
+<?xml version="1.0" encoding="utf-8"?>
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <OutputType>Exe</OutputType>
-    <TargetFramework>netcoreapp3.0</TargetFramework>
+    <TargetFramework>netcoreapp3.1</TargetFramework>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|AnyCPU'">
     <OutputPath>..\..\bin\Debug\</OutputPath>
@@ -11,15 +11,18 @@
     <OutputPath>..\..\bin\Release</OutputPath>
   </PropertyGroup>
   <PropertyGroup>
-    <RunWorkingDirectory>$(OutputPath)\netcoreapp3.0</RunWorkingDirectory>
+    <RunWorkingDirectory>$(OutputPath)\netcoreapp3.1</RunWorkingDirectory>
   </PropertyGroup>
   <ItemGroup>
-    #if __Media__
+    <Reference Include="BulletSharp">
+      <HintPath>/Users/atti/proj/BulletSharpPInvoke/BulletSharp/bin/Release/netcoreapp2.0/BulletSharp.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+  <ItemGroup>
 	<Compile Include="Model.fs" />
 	<Compile Include="Model.g.fs" />
 	<Compile Include="App.fs" />
-	#endif
-    <Compile Include="Program.fs" />
+  <Compile Include="Program.fs" />
   </ItemGroup>
   <Import Project="..\..\.paket\Paket.Restore.targets" />
 </Project>

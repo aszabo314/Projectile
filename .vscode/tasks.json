@@ -5,11 +5,13 @@
     "tasks": [
         {
             "label": "build",
-            "command": "dotnet build src/__SOLUTION_NAME__.sln",
+            "command": "dotnet build src/Deagle.sln",
             "type": "shell",
             "group": "build",
             "presentation": {
-                "reveal": "silent"
+                "reveal": "always",
+                "clear": true,
+                "focus": true
             },
             "problemMatcher": "$msCompile"
         }

@@ -1,4 +1,4 @@
-open __PROJECT_NAME__
+open Deagle
 
 open Aardium
 open Aardvark.Service
@@ -14,7 +14,6 @@ open System
 
 [<EntryPoint>]
 let main args =
-    Ag.initialize()
     Aardvark.Init()
     Aardium.init()
 
