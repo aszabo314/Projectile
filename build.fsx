@@ -9,7 +9,7 @@ open Aardvark.Fake
 
 do Environment.CurrentDirectory <- __SOURCE_DIRECTORY__
 
-DefaultSetup.install ["src/Deagle.sln"]
+DefaultSetup.install ["src/Projectile.sln"]
 
 
 entry()

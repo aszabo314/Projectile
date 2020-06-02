@@ -10,6 +10,7 @@ nuget Aardvark.Base                         ~> 5.0.10
 nuget Aardvark.Base.FSharp                  ~> 5.0.10
                                             
 nuget Aardvark.Base.Rendering               ~> 5.0.6
+nuget Aardvark.Application.Utilities        ~> 5.0.6
 nuget Aardvark.SceneGraph                   ~> 5.0.6
 nuget Aardvark.SceneGraph.IO                ~> 5.0.6
                                                 
