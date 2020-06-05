@@ -14,3 +14,4 @@ bin/Debug
 /Aardvark.log
 .DS_Store
 .ionide
+bin/
