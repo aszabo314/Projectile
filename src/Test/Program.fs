@@ -553,6 +553,7 @@ module Projectile =
 
             match intersect eps dt l1 r1 with
             | Some _ ->
+                //Some dt
                 let t = findIntersectionTime 0.0 dt l r
                 Some t
             | None ->
@@ -752,12 +753,12 @@ module Projectile =
                         |> HashMap.add li l
                         |> HashMap.add ri r
 
-
+                    t <- ti
 
                     ()
 
                 let missing = dt - t
-                if missing > 0.0 then step missing bodies bvh
+                if missing > 1E-8 then step missing bodies bvh
                 else bodies
             | None ->
                 integrate dt bodies
@@ -831,6 +832,8 @@ module Projectile =
 
     let test() =
 
+        Log.line "GC: %s" (if System.Runtime.GCSettings.IsServerGC then "server" else "normal")
+        System.Runtime.GCSettings.LatencyMode <- System.Runtime.GCLatencyMode.SustainedLowLatency
 
         let x = V3d.III.Normalized
         let y = V3d.PNN.Normalized
@@ -860,12 +863,13 @@ module Projectile =
         let getInitial() = 
             let mutable w = World.empty
 
-            let hs = 3
+            let hs = 5
             for x in -hs .. hs do
                 for y in -hs .. hs do
-                    for z in -hs .. hs do
+                    for z in -0 .. 0 do
                         let trans = V3d(2.0 * float x, 2.0 * float y, float z * 2.0)
-                        w <- w |> World.add (Id()) (Body(Sphere 0.8, 1.0, MotionState trans))
+                        //w <- w |> World.add (Id()) (Body(Sphere 0.8, 1.0, MotionState trans))
+                        w <- w |> World.add (Id()) (Body(Box V3d.III, 1.0, MotionState trans))
             
             w
             //World.empty 
@@ -874,27 +878,52 @@ module Projectile =
             ////|> World.add ib (Body(Point, 1.0, MotionState(V3d(3.0,0.7,0.7))))
             ////|> World.add ic (Body(Point, 1.0, MotionState(V3d(3.0,-0.7,0.7))))
 
-        let initial = cval(getInitial())
+        let paused = cval false
 
+        let initial = cval(getInitial())
+        let mutable startIndex = 0
+        let worldct = 1000
+        let worlds = System.Collections.Generic.List<_>(worldct)
+
+        let clickDown = cval V2i.OO
+        let clickCurrent = cval V2i.OO
+        let maxWorld = cval 0
+        let worldIndex = 
+            (clickDown,clickCurrent,maxWorld) 
+            |||> AVal.map3 (fun d c m -> 
+                if m <= 0 then -1 else
+                    let t = ((float c.X - float d.X) / float m ) |> clamp 0.0 1.0
+                    (startIndex + int( t * float m))  % worlds.Count
+            ) 
         let win = window { backend Backend.GL }
 
         let sw = System.Diagnostics.Stopwatch()
         let world =
-            initial |> AVal.bind (fun w ->
+            AVal.bind (fun w ->
                 let mutable w = w
                 let mutable iter = 0
-                win.Time |> AVal.map (fun _ ->
-                    let dt = sw.Elapsed.TotalSeconds
-                    sw.Restart()
-                    w <- World.step dt w
-                    iter <- iter + 1
-                    if iter >= 100 then
-                        //Log.line "%.4f" w.KineticEnergy
-                        iter <- 0
-
-                    w
-                )
-            )
+                AVal.bind2 (fun paused idx ->
+                    win.Time |> AVal.map (fun _ ->
+                        let dt = sw.Elapsed.TotalSeconds
+                        sw.Restart()
+                        if not paused then
+                            w <- World.step 0.016666666 w//dt w
+                            if worlds.Count >= worldct then 
+                                worlds.[startIndex] <- w
+                                startIndex <- (startIndex + 1)%worldct
+                            else                            
+                                worlds.Add w
+                            iter <- iter + 1
+                            if iter >= 100 then
+                                //Log.line "%.4f" w.KineticEnergy
+                                iter <- 0
+                            w                        
+                        else 
+                            if idx = -1 then w
+                            else worlds.[idx]
+                        
+                )) paused worldIndex
+            ) initial 
             
         let wireBoxTrafos = 
             world |> AVal.map (fun w ->
@@ -945,7 +974,7 @@ module Projectile =
             )
 
         let energy =
-            let text = world |> AVal.map (fun w -> sprintf "%.8fJ" w.KineticEnergy)
+            let text = world |> AVal.map3 (fun p i w -> (sprintf "%.8fJ" w.KineticEnergy)+(if p then sprintf "(P=%d)" i else "")) paused worldIndex
             Sg.text FontSquirrel.Hack.Regular C4b.White text
             |> Sg.scale 20.0
             |> Sg.trafo (win.Sizes |> AVal.map (fun s -> Trafo3d.Translation(-float s.X / 2.0 + 10.0, -float s.Y / 2.0 + 10.0, 0.0)))
@@ -1021,8 +1050,64 @@ module Projectile =
             | _ ->
                 ()
         )
+        let pausedViewTrafo = cval Trafo3d.Identity
 
-        win.Scene <- objects
+        win.Keyboard.Down.Values.Add ( fun k -> 
+            match k with
+            | Keys.LeftCtrl -> 
+                transact ( fun () -> 
+                    paused.Value <- true
+                    let vt = win.View.GetValue()
+                    pausedViewTrafo.Value <- vt.[0]
+                )
+            | _ -> ()
+        )
+
+        win.Keyboard.Up.Values.Add ( fun k -> 
+            match k with
+            | Keys.LeftCtrl -> 
+                transact ( fun () -> 
+                    paused.Value <- false
+                )
+            | _ -> ()
+        )
+
+        win.Mouse.Down.Values.Add (fun k -> 
+            if paused.GetValue() then 
+                match k with
+                | MouseButtons.Left -> 
+                    transact (fun _ -> 
+                        maxWorld.Value <- worlds.Count-1
+                        clickDown.Value <- win.Mouse.Position.GetValue().Position
+                        clickCurrent.Value <- win.Mouse.Position.GetValue().Position
+                    )
+                | _ -> ()
+        )
+
+        win.Mouse.Move.Values.Add (fun (p1,p2) -> 
+            if paused.GetValue() && win.Mouse.IsDown(MouseButtons.Left).GetValue() then 
+                transact (fun _ -> 
+                    clickCurrent.Value <- win.Mouse.Position.GetValue().Position
+                )
+        )
+
+        let sg = objects
+        let ch = 
+            let s = 0.0025
+            Sg.fullScreenQuad
+            |> Sg.transform (Trafo3d.Scale(s,s,1.0))
+            |> Sg.shader {
+                do! DefaultSurfaces.trafo                
+                do! DefaultSurfaces.constantColor C4f.White                
+            }
+            |> Sg.viewTrafo (AVal.constant Trafo3d.Identity)
+            |> Sg.projTrafo (AVal.constant Trafo3d.Identity)
+
+        let finalsg = 
+            sg |> Sg.viewTrafo (paused |> AVal.bind (fun p -> if p then pausedViewTrafo :> _ else win.View |> AVal.map (Array.item 0)))
+               |> Sg.andAlso ch
+
+        win.Scene <- finalsg
 
         win.Run()
 
@@ -1226,19 +1311,24 @@ let main argv =
             backend Backend.GL        
         }
 
+    let paused = cval false
+
     let world = cval((0,initial))
+    let worlds = System.Collections.Generic.List<_>()
+    worlds.Add initial
     let tw = 
-        world |> AVal.bind (fun (_,initial) ->
+        AVal.bind2 (fun (_,initial) paused ->
             let mutable w = initial
             let sw = System.Diagnostics.Stopwatch()
             win.Time |> AVal.map (fun _ ->
                 let dt = sw.Elapsed.TotalSeconds
                 sw.Restart()
-                if dt < 0.05 then
+                if dt < 0.05 && not paused then
                     w <- stepWorld 500 dt w
+                    worlds.Add w
                 w
             )
-        )
+        ) world paused
 
     let trafos =
         tw |> AVal.map (fun w ->
@@ -1268,7 +1358,31 @@ let main argv =
             ()
     )
 
-    win.Scene <- sg
+    let pausedViewTrafo = cval Trafo3d.Identity
+
+    win.Keyboard.Down.Values.Add ( fun k -> 
+        match k with
+        | Keys.LeftCtrl -> 
+            transact ( fun () -> 
+                paused.Value <- true
+                let vt = win.View.GetValue()
+                pausedViewTrafo.Value <- vt.[0]
+            )
+        | _ -> ()
+    )
+
+    win.Keyboard.Up.Values.Add ( fun k -> 
+        match k with
+        | Keys.LeftCtrl -> 
+            transact ( fun () -> 
+                paused.Value <- false
+            )
+        | _ -> ()
+    )
+
+    let finalsg = 
+        sg |> Sg.viewTrafo (paused |> AVal.bind (fun p -> if p then pausedViewTrafo :> _ else win.View |> AVal.map (Array.item 0)))
+    win.Scene <- finalsg
     win.Run()
 
     0 // return an integer exit code
