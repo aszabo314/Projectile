@@ -6,6 +6,7 @@ open FSharp.Data.Adaptive
 open Aardvark.Application
 open Aardvark.SceneGraph
 open Aardvark.Base.Rendering
+open Aardvark.Rendering.Text
 open System
 
 [<AutoOpen>]
@@ -42,6 +43,65 @@ module BoxExtensions =
 
 
         member x.Intersects (o : OrientedBox3d, eps : float) =
+
+            //let t = o.Trafo * x.Trafo.Inverse
+            //let oc = t.TransformPos o.Box.Center
+            //let xc = x.Box.Center
+            //let xdir = oc - xc
+            //let odir = t.InvTransformDir xdir
+
+            //let p0 =
+            //    if xdir.X > 0.0 then Plane3d( V3d.IOO, x.Box.Max.X)
+            //    else Plane3d(-V3d.IOO, x.Box.Min.X)
+
+            //let p1 =
+            //    if xdir.Y > 0.0 then Plane3d( V3d.OIO, x.Box.Max.Y)
+            //    else Plane3d(-V3d.OIO, x.Box.Min.Y)
+
+            //let p2 =
+            //    if xdir.X > 0.0 then Plane3d( V3d.OOI, x.Box.Max.Z)
+            //    else Plane3d(-V3d.OOI, x.Box.Min.Z)
+                
+            //let q0 =
+            //    if odir.X > 0.0 then Plane3d(t.TransformDir -V3d.IOO, t.TransformPos o.Box.Min)
+            //    else Plane3d(t.TransformDir V3d.IOO, t.TransformPos o.Box.Max)
+                
+            //let q1 =
+            //    if odir.Y > 0.0 then Plane3d(t.TransformDir -V3d.OIO, t.TransformPos o.Box.Min)
+            //    else Plane3d(t.TransformDir V3d.OIO, t.TransformPos o.Box.Max)
+                
+            //let q2 =
+            //    if odir.Z > 0.0 then Plane3d(t.TransformDir -V3d.OOI, t.TransformPos o.Box.Min)
+            //    else Plane3d(t.TransformDir V3d.OOI, t.TransformPos o.Box.Max)
+
+            //let alternatives =
+            //    [
+            //        p0, q0, q1
+            //        p0, q0, q2
+            //        p0, q1, q2
+                    
+            //        p1, q0, q1
+            //        p1, q0, q2
+            //        p1, q1, q2
+
+            //        p2, q0, q1
+            //        p2, q0, q2
+            //        p2, q1, q2
+
+            //        q0, p0, p1
+            //        q0, p0, p2
+            //        q0, p1, p2
+
+            //        q1, p0, p1
+            //        q1, p0, p2
+            //        q1, p1, p2
+
+            //        q2, p0, p1
+            //        q2, p0, p2
+            //        q2, p1, p2
+            //    ]
+
+
             let ha = Hull3d.Create(x.Box).Transformed(Trafo3d x.Trafo).PlaneArray |> Array.map (fun p -> p.Normalized)
             let hb = Hull3d.Create(o.Box).Transformed(Trafo3d o.Trafo).PlaneArray |> Array.map (fun p -> p.Normalized)
             
@@ -151,25 +211,25 @@ module Projectile =
                 M33d.FromDiagonal(ix, iy, iz), M33d.FromDiagonal(1.0 / ix, 1.0 / iy, 1.0 / iz)
 
 
-    type MotionState(trafo : Euclidean3d, velocity : V3d, angularMomentum : V3d) =  
+    type MotionState(trafo : Trafo3d, velocity : V3d, angularMomentum : V3d) =  
         member x.Trafo = trafo
         member x.Velocity = velocity
         member x.AngularMomentum = angularMomentum
         
 
         new (position : V3d, velocity : V3d, angularMomentum : V3d) =
-            MotionState(Euclidean3d.Translation position, velocity, angularMomentum)
+            MotionState(Trafo3d.Translation position, velocity, angularMomentum)
 
         new (position : V3d, velocity : V3d) =
-            MotionState(Euclidean3d.Translation position, velocity, V3d.Zero)
+            MotionState(Trafo3d.Translation position, velocity, V3d.Zero)
 
         new (position : V3d) =
-            MotionState(Euclidean3d.Translation position, V3d.Zero, V3d.Zero)
+            MotionState(Trafo3d.Translation position, V3d.Zero, V3d.Zero)
 
-        new (trafo : Euclidean3d, velocity : V3d) =
+        new (trafo : Trafo3d, velocity : V3d) =
             MotionState(trafo, velocity, V3d.Zero)
 
-        new (trafo : Euclidean3d) =
+        new (trafo : Trafo3d) =
             MotionState(trafo, V3d.Zero, V3d.Zero)
 
     type Body private(shape : Shape, mass : float, inertia : M33d, invInertia : M33d, state : MotionState) =
@@ -177,47 +237,53 @@ module Projectile =
         member x.Mass = mass
         member x.Trafo = state.Trafo
         member x.Velocity = state.Velocity
-        member x.AngularVelocity = state.Trafo.TransformDir (invInertia * state.Trafo.InvTransformDir state.AngularMomentum)
+        member x.AngularVelocity = 
+            if Fun.IsTiny(state.AngularMomentum) then 
+                V3d.Zero
+            else 
+                let wi = state.Trafo.Forward.UpperLeftM33() * invInertia * state.Trafo.Backward.UpperLeftM33()
+                wi * state.AngularMomentum
+                //state.Trafo.Forward.TransformDir (invInertia * state.Trafo.Backward.TransformDir state.AngularMomentum)
         member x.MotionState = state
         member x.Inertia = inertia
         member x.InverseInertia = invInertia
         
         member x.ApplyMomentum(p : V3d) =
-            let p = state.Trafo.InvTransformDir p
+            let p = state.Trafo.Backward.TransformDir p
             let s = MotionState(state.Trafo, state.Velocity + p / mass, state.AngularMomentum)
             Body(shape, mass, inertia, invInertia, s)
 
         member x.ApplyMomentum(position : V3d, p : V3d) =
-            let lPos = state.Trafo.InvTransformPos position
+            let lPos = state.Trafo.Backward.TransformPos position
             if Fun.IsTiny(lPos, 1E-8) then
                 let s = MotionState(state.Trafo, state.Velocity + p / mass, state.AngularMomentum)
                 Body(shape, mass, inertia, invInertia, s)
             else
-                let lImpulse = state.Trafo.InvTransformDir p
+                let lImpulse = state.Trafo.Backward.TransformDir p
                 let ldl = Vec.cross lPos lImpulse
                 let ldp = (Vec.dot lImpulse lPos * lPos) / lPos.LengthSquared
 
-                let dv = state.Trafo.TransformDir (ldp / mass)
-                let dl = state.Trafo.TransformDir ldl
+                let dv = state.Trafo.Forward.TransformDir (ldp / mass)
+                let dl = state.Trafo.Forward.TransformDir ldl
 
                 let s = MotionState(state.Trafo, state.Velocity + dv, state.AngularMomentum + dl)
                 Body(shape, mass, inertia, invInertia, s)
             
         member x.GetVelocity(position : V3d) =
-            let lPosition = state.Trafo.InvTransformPos position
+            let lPosition = state.Trafo.Backward.TransformPos position
             if Fun.IsTiny(lPosition, 1E-8) then
                 state.Velocity
             elif Fun.IsTiny(state.AngularMomentum, 1E-8) then
                 state.Velocity
             else
-                let ll = state.Trafo.InvTransformDir state.AngularMomentum
+                let ll = state.Trafo.Backward.TransformDir state.AngularMomentum
                 let lw = invInertia * ll
-                let vr = state.Trafo.TransformDir (Vec.cross lw lPosition)
+                let vr = state.Trafo.Forward.TransformDir (Vec.cross lw lPosition)
                 let vl = state.Velocity
                 vl + vr
    
         member x.KineticEnergy =
-            let w = invInertia * state.Trafo.InvTransformDir state.AngularMomentum
+            let w = invInertia * state.Trafo.Backward.TransformDir state.AngularMomentum
             let v2 = state.Velocity.LengthSquared
             
             let mov = if Fun.IsTiny v2 then 0.0 else 0.5 * mass * v2
@@ -227,7 +293,7 @@ module Projectile =
         member x.WithMotionState(state : MotionState) =
             Body(shape, mass, inertia, invInertia, state)
 
-        member x.WithTrafo(trafo : Euclidean3d) =
+        member x.WithTrafo(trafo : Trafo3d) =
             Body(shape, mass, inertia, invInertia, MotionState(trafo, state.Velocity, state.AngularMomentum))
 
         new(shape : Shape, mass : float, state : MotionState) =
@@ -236,17 +302,22 @@ module Projectile =
 
     module Body =
 
+        let bounds (b : Body) =
+            let bb = Shape.bounds b.Shape
+            let m : M44d = b.MotionState.Trafo.Forward
+            bb.Transformed(m)
+
         let performHit (e : float) (pt : V3d) (n : V3d) (l : Body) (r : Body) =
             let vl = l.Velocity
             let vr = r.Velocity
             let vpl = l.GetVelocity pt
             let vpr = r.GetVelocity pt
             
-            let lr = l.Trafo.InvTransformPos pt
-            let rr = r.Trafo.InvTransformPos pt
+            let lr = l.Trafo.Backward.TransformPos pt
+            let rr = r.Trafo.Backward.TransformPos pt
 
-            let ln = l.Trafo.InvTransformDir n
-            let rn = r.Trafo.InvTransformDir n
+            let ln = l.Trafo.Backward.TransformDir n
+            let rn = r.Trafo.Backward.TransformDir n
 
             let vrr = vpr - vpl //Vec.dot bn (vp2 - vp1) * bn
             if Vec.dot n vrr >= 0.0 then
@@ -262,8 +333,8 @@ module Projectile =
                 let vr1 = vr + p / r.Mass
 
 
-                let ll1 = l.MotionState.AngularMomentum - Vec.cross (l.Trafo.TransformDir lr) p
-                let rl1 = r.MotionState.AngularMomentum + Vec.cross (r.Trafo.TransformDir rr) p
+                let ll1 = l.MotionState.AngularMomentum - Vec.cross (l.Trafo.Forward.TransformDir lr) p
+                let rl1 = r.MotionState.AngularMomentum + Vec.cross (r.Trafo.Forward.TransformDir rr) p
 
                 Some (
                     l.WithMotionState(MotionState(l.Trafo, vl1, ll1)),
@@ -276,16 +347,17 @@ module Projectile =
 
             let dRot = Rot3d.FromAngleAxis(w * dt)
             let dPos = v * dt
+            let o = Euclidean3d.FromTrafo3d b.Trafo
             b.WithTrafo(
-                Euclidean3d(dRot * b.Trafo.Rot, dPos + b.Trafo.Trans)
+                Euclidean3d(dRot * o.Rot, dPos + o.Trans) |> Trafo3d
             )
 
 
         module Intersections =
             
             let spherePoint (eps : float) (sphere : MotionState) (radius : float) (point : MotionState) =
-                let c = sphere.Trafo.Trans
-                let p = point.Trafo.Trans
+                let c = sphere.Trafo.Forward.C3.XYZ
+                let p = point.Trafo.Forward.C3.XYZ
 
                 let d = p - c
                 let r = Vec.length d
@@ -302,8 +374,8 @@ module Projectile =
                     None
 
             let sphereSphere (eps : float) (l : MotionState) (lr : float) (r : MotionState) (rr : float) =
-                let lc = l.Trafo.Trans
-                let rc = r.Trafo.Trans
+                let lc = l.Trafo.Forward.C3.XYZ
+                let rc = r.Trafo.Forward.C3.XYZ
 
                 let d = rc - lc
                 let distance = Vec.length d
@@ -348,9 +420,9 @@ module Projectile =
                         
             let boxPoint (eps : float) (dt : float) (box : Body) (size : V3d) (point : Body) =
                 
-                let pt = point.Trafo.Trans
+                let pt = point.Trafo.Forward.C3.XYZ
                 let hs = size / 2.0
-                let ob = OrientedBox3d(Box3d(-hs, hs), box.Trafo)
+                let ob = OrientedBox3d(Box3d(-hs, hs), Euclidean3d.FromTrafo3d box.Trafo)
 
                 if ob.Contains(pt, eps) then
                     let trafo = ob.Trafo
@@ -368,7 +440,7 @@ module Projectile =
                         let mutable tmin = System.Double.NegativeInfinity
                         let mutable tmax = System.Double.PositiveInfinity
 
-                        if intersectsBox eps lr bb &tmin &tmax && tmin <= eps && tmin >= -dt - eps then
+                        if intersectsBox eps lr bb &tmin &tmax && tmin <= eps then
                             let t = tmin
                             let lhit = lr.GetPointOnRay t
 
@@ -395,16 +467,16 @@ module Projectile =
                 
                 let hs = size / 2.0
                 let lb = Box3d(-hs, hs)
-                let c = sphere.Trafo.Trans
-                let lc = box.Trafo.InvTransformPos c
+                let c = sphere.Trafo.Forward.C3.XYZ
+                let lc = box.Trafo.Backward.TransformPos c
                 let lhit = lc.GetClosestPointOn lb
 
                 let ld = lhit - lc
                 let len = Vec.length ld
                 if len <= radius + eps then
                     let ln = ld / len
-                    let n = box.Trafo.TransformDir ln
-                    let p = box.Trafo.TransformPos lhit
+                    let n = box.Trafo.Forward.TransformDir ln
+                    let p = box.Trafo.Forward.TransformPos lhit
 
                     let sv = sphere.Velocity
                     let bv = box.GetVelocity p
@@ -421,11 +493,11 @@ module Projectile =
 
                 let lb =
                     let hs = ls / 2.0
-                    OrientedBox3d(Box3d(-hs, hs), l.Trafo)
+                    OrientedBox3d(Box3d(-hs, hs), Euclidean3d.FromTrafo3d l.Trafo)
 
                 let rb =
                     let hs = rs / 2.0
-                    OrientedBox3d(Box3d(-hs, hs), r.Trafo)
+                    OrientedBox3d(Box3d(-hs, hs), Euclidean3d.FromTrafo3d r.Trafo)
 
 
                 let pts = lb.Intersects(rb, eps)
@@ -446,8 +518,8 @@ module Projectile =
             | Shape.Point ->
                 match r.Shape with
                 | Shape.Point -> None
-                | Shape.Sphere radius -> Intersections.spherePoint eps l.MotionState radius r.MotionState
-                | Shape.Box size -> Intersections.boxPoint eps dt r size l
+                | Shape.Sphere radius -> Intersections.spherePoint eps l.MotionState radius r.MotionState |> Option.map (List.map (fun (p, n) -> p, -n))
+                | Shape.Box size -> Intersections.boxPoint eps dt r size l |> Option.map (List.map (fun (p, n) -> p, -n))
             | Shape.Sphere lr ->
                 match r.Shape with
                 | Shape.Point -> Intersections.spherePoint eps l.MotionState lr r.MotionState
@@ -456,10 +528,10 @@ module Projectile =
             | Shape.Box lsize ->
                 match r.Shape with
                 | Shape.Point -> Intersections.boxPoint eps dt l lsize r
-                | Shape.Sphere radius -> Intersections.sphereBox eps r radius l lsize
+                | Shape.Sphere radius -> Intersections.sphereBox eps r radius l lsize |> Option.map (List.map (fun (p, n) -> p, -n))
                 | Shape.Box rsize -> Intersections.boxBox eps l lsize r rsize
 
-        let eps = 1E-8
+        let eps = 1E-2
 
         let rec private findIntersectionTime (offset : float) (size : float) (l : Body) (r : Body) =
             if size <= eps then
@@ -508,6 +580,15 @@ module Projectile =
         override x.GetHashCode() = 
             value
 
+        interface IComparable with
+            member x.CompareTo o =
+                match o with
+                | :? Id as o -> compare value o.Value
+                | _ -> failwith "bad"
+
+        interface IComparable<Id> with
+            member x.CompareTo o = compare value o.Value
+
         new() = Id(Interlocked.Increment(&currentId))
 
 
@@ -521,169 +602,70 @@ module Projectile =
             else
                 None
 
+    open Aardvark.Base.Geometry
 
-    type World(bodies : HashMap<Id, Body>) =
+
+    type DynamicBvh private(bvh : BvhTree3d<Id, int>, bounds : HashMap<Id, Box3d>) =
+        static let eps = 1E-5
+        static let factor = 1.5
+        static let empty = DynamicBvh(BvhTree3d.Empty(1), HashMap.empty)
+
+        static member Empty = empty
+
+        member x.Boxes =
+            let rec traverse (n : BvhNode3d<_,_>) =
+                match n with
+                | BvhNode3d.Leaf(_,b,_) -> Seq.singleton b
+                | BvhNode3d.Node(_,_,b,l,r) ->
+                    Seq.append (traverse l) (traverse r)
+                
+            match bvh.Root with
+            | Some root -> traverse root
+            | None -> Seq.empty
+
+        member x.Add(id : Id, body : Box3d) =
+            let query = body.EnlargedBy eps
+            match HashMap.tryFindV id bounds with
+            | ValueSome bounds when bounds.Contains query ->
+                x
+            | _ ->
+                let newBounds = 
+                    if body.IsEmpty then body.EnlargedBy 1.0
+                    else Box3d.FromCenterAndSize(body.Center, factor * body.Size)
+
+                let bounds =
+                    HashMap.add id newBounds bounds
+
+                let bvh =
+                    bvh 
+                    |> BvhTree3d.remove id
+                    |> BvhTree3d.add id newBounds 0
+
+                DynamicBvh(bvh, bounds)
+
+        member x.Remove(id : Id) =
+            DynamicBvh(
+               BvhTree3d.remove id bvh,
+               HashMap.remove id bounds
+            )
+
+        member x.GetIntersecting (query : Box3d) =
+            let query = query.EnlargedBy eps
+            BvhTree3d.getIntersecting query bvh |> HashMap.keys
+
+
+
+
+
+    type World(bodies : HashMap<Id, Body>, bvh : DynamicBvh) =
         static let eps = 1E-6
 
-        static let boxNormal (b : Box3d) (pt : V3d) =
-            
-            let s = b.Size
-            let c = b.Center
-
-            let d = 
-                let d = (pt - c).Abs() - s / 2.0
-                d.Abs().MinorDim
-                
-            let s = pt.[d] >= c.[d]
-
-            let mutable v = V3d.Zero
-            v.[d] <- 1.0
-            if not s then v <- -v
-            v
-
-        static let integrate (dt : float) (bodies : HashMap<'a, Body>) =
+        static let integrate (dt : float) (bodies : HashMap<Id, Body>) =
             if dt <= 0.0 then bodies
             else bodies |> HashMap.map (fun _ -> Body.integrate dt)
 
-        static let intersect (l : Body) (r : Body) =
-            match l.Shape, r.Shape with
-            | Point, Point -> 
-                None
-            | Box ls, Box rs ->
-                let lb = OrientedBox3d(Box3d(-ls/2.0, ls/2.0), l.Trafo)
-                let rb = OrientedBox3d(Box3d(-rs/2.0, rs/2.0), r.Trafo)
-                
-                let lh = Hull3d.Create(Box3d(-ls/2.0, ls/2.0)).Transformed(Trafo3d l.Trafo)
-                let rh = Hull3d.Create(Box3d(-rs/2.0, rs/2.0)).Transformed(Trafo3d r.Trafo)
 
-                match Hull.intersects lh rh with
-                | Some (pt, plane) ->
-                    let n = plane.Normal
-                    Body.performHit 1.0 pt n l r
-                | None ->
-                    None
-                //if pts.Count > 0 then Log.line "asdasd: %A" pts
-
-                //let hit = rb.Corners |> Array.tryFind (fun c -> lb.Box.Contains (l.Trafo.InvTransformPos c))
-
-                //match hit with
-                //| Some pt ->
-                //    let n = l.Trafo.TransformDir (boxNormal lb.Box (l.Trafo.InvTransformPos pt))
-                //    Body.hit 1.0 pt n l r
-                //| None ->
-                //    let hit = lb.Corners |> Array.tryFind (fun c -> rb.Box.Contains (r.Trafo.InvTransformPos c))
-                //    match hit with
-                //    | Some pt ->
-                //        let n = r.Trafo.TransformDir (boxNormal rb.Box (r.Trafo.InvTransformPos pt))
-                //        Body.hit 1.0 pt n l r
-                //    | None ->
-                //        None
-            | _ -> 
-                let box, point, size =
-                    match l.Shape, r.Shape with
-                    | Box bs, Point -> l, r, bs
-                    | Point, Box bs -> r, l, bs
-                    | _ -> failwith ""
-
-
-                let bb = Box3d(-size/2.0, size/2.0)
-                let pt = point.Trafo.TransformPos V3d.Zero
-
-                let pl = box.Trafo.InvTransformPos pt
-                if bb.Contains pl then
-                    let bc = box.Trafo.TransformPos V3d.Zero
-
-
-                    let vp = point.Velocity
-                    let vb = box.GetVelocity(pt)
-
-                    let d = 
-                        let d = pl.Abs() - (size / 2.0)
-                        d.Abs().MinorDim
-                        //pl / (size/2.0)
-                
-                    let s = pl.[d] >= bb.Center.[d]
-
-                    let lbn = 
-                        let mutable v = V3d.Zero
-                        v.[d] <- 1.0
-                        if not s then v <- -v
-                        v
-                    let bn = 
-                        box.Trafo.TransformDir lbn
-
-
-                    if Vec.dot bn (vp - vb) < 0.0 then
-
-                        Body.performHit 1.0 pt bn box point
-
-
-                        ////let laxis = Vec.cross lbn pl |> Vec.normalize |> box.Trafo.InvTransformDir
-                        ////let i = Vec.dot laxis (box.Inertia * laxis)
-                        ////let r2 = Vec.cross laxis pl |> Vec.lengthSquared
-                        //let m1 = box.Mass
-                        //let m2 = point.Mass
-
-                        //let w1 = box.InverseInertia * box.MotionState.AngularMomentum
-                        //let w2 = V3d.Zero
-
-                        //let v1 = box.Velocity
-                        //let v2 = point.Velocity
-                        //let vp1 = vb
-                        //let vp2 = vp
-                        //let n = bn
-
-                        //let ii1 = box.InverseInertia
-                        //let ii2 = point.InverseInertia
-
-
-                        //let vr = vp2 - vp1 //Vec.dot bn (vp2 - vp1) * bn
-                        //let e = 0.0001
-                        //let a = Vec.dot (Vec.cross (ii1 * (Vec.cross pl lbn)) pl) lbn
-                        //let d = a + 1.0 / m1 + 1.0 / m2
-                        //let jr = (-(1.0 + e) * Vec.dot vr bn) / d
-
-                        //let p = jr * bn
-
-                        //let v1' = v1 - p / m1
-                        //let v2' = v2 + p / m2
-
-                        //let ll1 = l.MotionState.AngularMomentum + Vec.cross (bc - pt) p 
-
-
-                        ////let w1' = w1 - jr * ii1 * (Vec.cross pl lbn)
-                        ////let w2' = w2
-
-
-                        //let l1 = l.WithMotionState(MotionState(l.Trafo, v1', ll1))
-                        //let r1 = r.WithMotionState(MotionState(r.Trafo, v2', r.MotionState.AngularMomentum))
-
-                        //Some (l1, r1)
-
-
-                        //let lv = Vec.dot vb bn
-                        //let rv = Vec.dot vp bn
-                    
-                        //let lv1 = ((m1-m2)/(m1+m2))*lv + (2.0*m2/(m1+m2))*rv
-                        //let rv1 = (2.0*m1/(m1+m2))*lv + ((m2-m1)/(m1+m2))*rv
-                
-                        //let l1 = l.AddVelocity(pt, bn * ( -lv + lv1 ))
-                        //let r1 = r.AddVelocity(pt, bn * ( -rv + rv1 ))
-
-                        ////let lv1 = ls.Velocity + dlr * ( -lv + lv1 )
-                        ////let rv1 = rs.Velocity + dlr * ( -rv + rv1 )
-
-                        //Some (l1, r1)
-                    else
-                        None
-                else
-                    None
-
-
-
-
-
-        static let rec allPairs (l : list<'a>) =
+        static let rec allPairs (l : list<Id>) =
             match l with
             | [] -> []
             | h :: t ->
@@ -691,40 +673,58 @@ module Projectile =
                     (t |> List.map (fun t -> (h, t)))
                     (allPairs t)
 
-        static let rec fixIntersections (bodies : HashMap<'a, Body>) =
-            let mutable bodies = bodies
-            let keys = HashMap.keys bodies |> Seq.toList |> allPairs
 
-            let mutable any = false
-            for (l, r) in keys do
-                let lb = bodies.[l]
-                let rb = bodies.[r]
-                match intersect lb rb with
-                | Some (l1, r1) ->
-                    any <- true
-                    bodies <- 
-                        bodies
-                        |> HashMap.add l l1
-                        |> HashMap.add r r1
-                | None ->
-                    ()
-            if any then fixIntersections bodies
-            else bodies
-
-
-        static let rec step (dt : float) (bodies : HashMap<'a, Body>) =
+        static let rec step (dt : float) (bodies : HashMap<Id, Body>) (bvh : DynamicBvh) =
             let bodies = bodies
-            let keys = bodies |> Seq.toList |> allPairs
+            //let keys = bodies |> Seq.toList |> allPairs
 
-            let mutable results = MapExt.empty<float, list<'a*'a>>
+            let mutable results = MapExt.empty<float, list<Id * Id>>
 
 
-            for ((li,l), (ri, r)) in keys do
-                match Body.intersectWithin dt l r with
-                | Some dti ->
-                    results <- results |> MapExt.alter dti (function Some o -> Some ((li, ri) :: o) | None -> Some [li,ri])
-                | None ->
-                    ()
+            for (li, lb) in bodies do
+                let bb = Body.bounds lb
+                let intersecting = bvh.GetIntersecting bb
+                for ri in intersecting do
+                    if ri > li then 
+                        let rb = bodies.[ri]
+
+                        if not (Fun.IsTiny lb.Velocity) || not (Fun.IsTiny rb.Velocity) then 
+                            let lbb = bb.EnlargedBy(eps)
+                            let rbb = Body.bounds(rb).EnlargedBy(eps)
+                            if lbb.Intersects rbb then 
+                                let rb = bodies.[ri]
+                                match Body.intersectWithin dt lb rb with
+                                | Some dti ->
+                                    results <- results |> MapExt.alter dti (function Some o -> Some ((li, ri) :: o) | None -> Some [li,ri])
+                                | None ->
+                                    ()
+            //let pairs =
+            //    bodies |> Seq.collect (fun (li, lb) ->
+            //        let bb = Body.bounds lb
+            //        let intersecing = bvh.GetIntersecting bb
+            //        intersecing |> Seq.choose (fun ri -> 
+            //            if ri > li then 
+            //                let rb = bodies.[ri]
+
+            //                if Fun.IsTiny lb.Velocity && Fun.IsTiny rb.Velocity then 
+            //                    None
+            //                else
+            //                    let lbb = Body.bounds(lb).EnlargedBy(eps)
+            //                    let rbb = Body.bounds(rb).EnlargedBy(eps)
+
+            //                    if lbb.Intersects rbb then Some struct (li, lb, ri, bodies.[ri])
+            //                    else None
+            //            else
+            //                None
+            //        )
+            //    ) 
+
+            //for struct (li, l, ri, r) in pairs do
+            //    match Body.intersectWithin dt l r with
+            //    | Some dti ->
+            //        results <- results |> MapExt.alter dti (function Some o -> Some ((li, ri) :: o) | None -> Some [li,ri])
+            //    | None ->
+            //        ()
 
             match MapExt.tryMin results with
             | Some dt0 ->
@@ -732,6 +732,7 @@ module Projectile =
                 
                 let mutable bodies = bodies
                 let mutable t = 0.0
+
                 for ti, (li, ri) in all do
                     let dt = ti - t
                     bodies <- integrate dt bodies
@@ -739,7 +740,7 @@ module Projectile =
                     let mutable l = bodies.[li]
                     let mutable r = bodies.[ri]
                     for (pt, n) in Body.intersect eps dt l r |> Option.defaultValue [] do
-                        match Body.performHit 1.0 pt n l r with
+                        match Body.performHit 0.99 pt n l r with
                         | Some (l1, r1) ->
                             l <- l1
                             r <- r1
@@ -756,44 +757,63 @@ module Projectile =
                     ()
 
                 let missing = dt - t
-                if missing > 0.0 then step missing bodies
+                if missing > 0.0 then step missing bodies bvh
                 else bodies
             | None ->
                 integrate dt bodies
 
+        member x.Boxes =
+            bvh.Boxes
 
 
         member x.KineticEnergy =
             (0.0, bodies) ||> HashMap.fold (fun s _ b -> s + b.KineticEnergy)
-            
 
         member x.Update (id : Id, update : Body -> Body) =
-            bodies
-            |> HashMap.alter id (Option.map update)
-            |> World
-
+            match HashMap.tryFindV id bodies with
+            | ValueSome b ->
+                let b1 = update b
+                let bounds = Body.bounds b1
+                let nbvh = bvh.Add(id, bounds)
+                let nbodies = bodies |> HashMap.add id b1
+                World(nbodies, nbvh)
+            | ValueNone ->
+                x
         member x.Add(id : Id, body : Body) =
-            World(HashMap.add id body bodies)
+            let bounds = Body.bounds body
+
+            World(
+                HashMap.add id body bodies,
+                bvh.Add(id, bounds) //BvhTree3d.add id bounds body bvh
+            )
 
         member x.Remove(id : Id) =
-            World(HashMap.remove id bodies)
+            World(
+                HashMap.remove id bodies,
+                bvh.Remove id
+            )
 
         member x.Step(dt : float) : World = 
-            if dt > 0.01 then
-                x.Step(dt / 2.0).Step(dt / 2.0)
+            if dt > 0.01666666 then
+                x.Step(0.01666666) //.Step(dt / 2.0)
             else
-                bodies
-                |> step dt
+                let nbodies = 
+                    step dt bodies bvh
+
+                let mutable bvh = bvh
+                for struct (k, v) in nbodies.ToSeqV() do
+                    bvh <- bvh.Add(k, Body.bounds v)
+
                 //|> integrate dt
                 //|> fixIntersections
-                |> World
+                World(nbodies, bvh)
 
         member x.Bodies = HashMap.toSeq bodies
 
         
     module World =
         
-        let empty = World HashMap.empty
+        let empty = World(HashMap.empty, DynamicBvh.Empty)
         
         let inline add (id : Id) (body : Body) (world : World) =
             world.Add(id, body)
@@ -829,11 +849,8 @@ module Projectile =
 
         let e = Euclidean3d.Translation(V3d(-0.51, 0.3, 0.7) - e.TransformPos(V3d(0.5, 0.5, -0.5))) * e
         
-        
-        
         let b0 = OrientedBox3d(Box3d.FromCenterAndSize(V3d.Zero, V3d.III), e)
         let b1 = OrientedBox3d(Box3d.FromCenterAndSize(V3d.Zero, V3d(1,1,2)), Euclidean3d.Identity)
-
 
         let pts = b0.Intersects(b1, 1E-6)
         for (p, n) in pts do
@@ -841,11 +858,21 @@ module Projectile =
         
         let ia = Id()
         let getInitial() = 
-            World.empty 
-            |> World.add ( Id()) (Body(Box (V3d.III), 1.0, MotionState(e)))
-            |> World.add ( Id()) (Body(Box (V3d(1,1,2)), 1.0, MotionState(V3d.Zero)))
-            //|> World.add ib (Body(Point, 1.0, MotionState(V3d(3.0,0.7,0.7))))
-            //|> World.add ic (Body(Point, 1.0, MotionState(V3d(3.0,-0.7,0.7))))
+            let mutable w = World.empty
+
+            let hs = 3
+            for x in -hs .. hs do
+                for y in -hs .. hs do
+                    for z in -hs .. hs do
+                        let trans = V3d(2.0 * float x, 2.0 * float y, float z * 2.0)
+                        w <- w |> World.add (Id()) (Body(Sphere 0.8, 1.0, MotionState trans))
+            
+            w
+            //World.empty 
+            //|> World.add ( Id()) (Body(Box (V3d.III), 1.0, MotionState(Trafo3d e)))
+            //|> World.add ( Id()) (Body(Box (V3d(1,1,1)), 1.0, MotionState(V3d.Zero)))
+            ////|> World.add ib (Body(Point, 1.0, MotionState(V3d(3.0,0.7,0.7))))
+            ////|> World.add ic (Body(Point, 1.0, MotionState(V3d(3.0,-0.7,0.7))))
 
         let initial = cval(getInitial())
 
@@ -869,6 +896,15 @@ module Projectile =
                 )
             )
             
+        let wireBoxTrafos = 
+            world |> AVal.map (fun w ->
+                w.Boxes |> Seq.map (fun b ->
+                    Trafo3d.Scale(b.Size) *
+                    Trafo3d.Translation b.Center
+                )
+                |> Seq.toArray
+            )
+
 
         let boxTrafos =
             world |> AVal.map (fun w -> 
@@ -908,6 +944,18 @@ module Projectile =
                 |> Seq.toArray
             )
 
+        let energy =
+            let text = world |> AVal.map (fun w -> sprintf "%.8fJ" w.KineticEnergy)
+            Sg.text FontSquirrel.Hack.Regular C4b.White text
+            |> Sg.scale 20.0
+            |> Sg.trafo (win.Sizes |> AVal.map (fun s -> Trafo3d.Translation(-float s.X / 2.0 + 10.0, -float s.Y / 2.0 + 10.0, 0.0)))
+            |> Sg.viewTrafo (AVal.constant Trafo3d.Identity)
+            |> Sg.projTrafo (win.Sizes |> AVal.map (fun s -> Trafo3d.Scale(2.0 / float s.X, 2.0 / float s.Y, 1.0) * Trafo3d.Translation(-V3d.OOI)))
+
+            
+        let showBoxes = cval false
+
+        
 
         let objects =
             Sg.ofList [
@@ -916,6 +964,16 @@ module Projectile =
 
                 Sg.box' C4b.Red (Box3d(-V3d.Half, V3d.Half))
                 |> Sg.instanced boxTrafos
+
+                Sg.wireBox' C4b.Yellow (Box3d(-V3d.Half, V3d.Half))
+                |> Sg.instanced wireBoxTrafos
+                |> Sg.shader {
+                    do! DefaultSurfaces.trafo
+                }
+                |> Sg.onOff showBoxes
+
+
+                energy
             ]
             |> Sg.shader {
                 do! DefaultSurfaces.trafo
@@ -936,22 +994,26 @@ module Projectile =
                 
                 //let p = win.Mouse.Position |> AVal.force
 
-                let c = vp.Backward.TransformPosProj (-V3d.OOI)
-                let dir = vp.Backward.TransformPosProj (V3d.OOI) - c |> Vec.normalize
-
-
-
+                let c = vp.Backward.TransformPosProj (-100000.0 * V3d.OOI)
 
 
                 let mutable w = AVal.force world
                 for i in 1 .. 1 do
-                    let b = Body(Box (V3d.III * 0.1), 0.5, MotionState(Euclidean3d(Rot3d.FromAngleAxis(rand.UniformV3dDirection() * rand.UniformDouble()), c + rand.UniformV3d b), 5.0 * dir))
+                    let dir = vp.Backward.TransformPosProj (V3d(0.1 * rand.UniformV2d (Box2d(-V2d.II, V2d.II)), -1.0)) - c |> Vec.normalize
+                    let r = Rot3d.FromAngleAxis(rand.UniformV3dDirection() * rand.UniformDouble())
+                    let t = Euclidean3d(Rot3d.Identity, c)
+                    let b = Body(Sphere 0.1, 0.8, MotionState(c + rand.UniformV3d b, 5.0 * dir))
                     w <- World.add (Id()) b w
 
                 transact (fun () ->
                     initial.Value <- w
                 )
          
+            | Keys.B ->
+                transact (fun () ->
+                    showBoxes.Value <- not showBoxes.Value
+                )
+
             | Keys.Escape ->
                 transact (fun () ->
                     initial.Value <- getInitial()
